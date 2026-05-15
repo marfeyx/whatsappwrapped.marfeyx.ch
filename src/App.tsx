@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { calculateWrappedStats, getAllParticipants, getRollingYearWindow, mergeChats } from "./stats";
+import { AccountProfile } from "./accountProfile";
 import type { ParsedChat, ParticipantStats, WrappedStats } from "./types";
 
 type AuthMode = "login" | "register";
@@ -237,10 +238,14 @@ export default function App() {
           <p className="lede">Upload WhatsApp export ZIPs. Stats are calculated in this browser for {windowLabel}.</p>
         </div>
 
-        <div className="auth-status">
-          <span>{isAuthReady ? authUser?.email ?? "Login required" : "Checking session..."}</span>
-          {authUser ? <button onClick={signOut}>Sign out</button> : <button onClick={() => setIsAuthModalOpen(true)}>Login</button>}
-        </div>
+        <AccountProfile
+          compact
+          className="auth-status"
+          user={authUser}
+          isAuthReady={isAuthReady}
+          onSignOut={signOut}
+          onLogin={() => setIsAuthModalOpen(true)}
+        />
 
         <button className="file-drop" disabled={!authUser || isImporting} onClick={openFilePicker}>
           <span className="file-icon">+</span>
