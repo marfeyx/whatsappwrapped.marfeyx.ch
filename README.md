@@ -1,6 +1,6 @@
 # Whatsapp Wrapped
 
-A login-gated, local-processing web app that computes a private annual wrap-up from WhatsApp chat export ZIPs.
+A local-processing web app that computes a private annual wrap-up from WhatsApp chat export ZIPs.
 
 ## Features
 
@@ -10,19 +10,19 @@ A login-gated, local-processing web app that computes a private annual wrap-up f
 - Mark one or more detected sender names as yourself.
 - Show totals, media counts, voice memo counts, participant rankings, activity by hour, per-chat summaries, and average response times.
 - Disable usage on mobile-sized screens.
+- Import without login.
 
 ## Privacy
 
 - Chat ZIPs are not uploaded.
-- Imported data is kept in React memory and is cleared on refresh, sign-out, or tab close.
+- Chat contents are not saved to localStorage, sessionStorage, or IndexedDB by this app.
+- Imported data is kept in React memory and is cleared on refresh or tab close.
+- No login or external auth service is used.
+- Do not commit real chat exports, raw chat `.txt` files, or private keys.
 
+## Configuration
 
-
-
-
-```text
-https://whatsappwrapped.marfeyx.ch
-```
+No external auth configuration is required.
 
 ## Development
 

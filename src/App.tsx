@@ -1,30 +1,10 @@
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { calculateWrappedStats, getAllParticipants, getRollingYearWindow, mergeChats } from "./stats";
-import { AccountProfile } from "./accountProfile";
 import type { ParsedChat, ParticipantStats, WrappedStats } from "./types";
 
-type AuthMode = "login" | "register";
-
-const maxAuthAttempts = 5;
-const authLockoutMs = 60 * 1000;
-const maxAuthSubmissions = 5;
-const authRateLimitWindowMs = 60 * 1000;
 const mobileBreakpoint = 860;
 
 export default function App() {
-  const [authUser, setAuthUser] = useState<User | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authDisplayName, setAuthDisplayName] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [authFailures, setAuthFailures] = useState(0);
-  const [authLockedUntil, setAuthLockedUntil] = useState<number | null>(null);
-  const [authRateLimitedUntil, setAuthRateLimitedUntil] = useState<number | null>(null);
-  const [now, setNow] = useState(() => Date.now());
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < mobileBreakpoint);
   const [chats, setChats] = useState<ParsedChat[]>([]);
   const [selfAliases, setSelfAliases] = useState<Set<string>>(() => new Set());
@@ -32,16 +12,6 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [importStatus, setImportStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const authSubmissionTimes = useRef<number[]>([]);
-
-  const authNow = now;
-  const isAuthLocked = Boolean(authLockedUntil && authLockedUntil > authNow);
-  const isAuthRateLimited = Boolean(authRateLimitedUntil && authRateLimitedUntil > authNow);
-  const isAuthBlocked = isAuthLocked || isAuthRateLimited;
-  const authBlockSeconds = Math.max(
-    authLockedUntil ? Math.ceil((authLockedUntil - authNow) / 1000) : 0,
-    authRateLimitedUntil ? Math.ceil((authRateLimitedUntil - authNow) / 1000) : 0,
-  );
   const participants = useMemo(() => getAllParticipants(chats), [chats]);
   const stats = useMemo(() => calculateWrappedStats(chats, selfAliases, new Date()), [chats, selfAliases]);
   const windowLabel = `${formatDate(stats.windowStart)} - ${formatDate(stats.windowEnd)}`;
@@ -52,48 +22,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < mobileBreakpoint);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
-      if (!isMounted) return;
-      setAuthUser(data.user);
-      setIsAuthReady(true);
-      setIsAuthModalOpen(!data.user);
-    });
-
-    const {
-      data: { subscription },
-      setAuthUser(session?.user ?? null);
-      setIsAuthReady(true);
-      setIsAuthModalOpen(!session?.user);
-      if (!session?.user) clearImportedChats();
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
+    useEffect(() => {
     setSelfAliases((current) => new Set([...current].filter((alias) => participants.includes(alias))));
   }, [participants]);
 
   function openFilePicker() {
-    if (!authUser) {
-      setAuthError("");
-      setIsAuthModalOpen(true);
-      return;
-    }
     fileInputRef.current?.click();
   }
 
@@ -101,12 +39,7 @@ export default function App() {
     const selected = Array.from(event.target.files ?? []);
     event.target.value = "";
     if (!selected.length) return;
-    if (!authUser) {
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    const zipFiles = selected.filter((file) => file.name.toLowerCase().endsWith(".zip"));
+        const zipFiles = selected.filter((file) => file.name.toLowerCase().endsWith(".zip"));
     const rejected = selected.length - zipFiles.length;
     const { windowStart, windowEnd } = getRollingYearWindow(new Date());
 
@@ -131,80 +64,7 @@ export default function App() {
     }
   }
 
-  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
 
-    if (isAuthBlocked) {
-      setAuthError(`Too many attempts. Try again in ${authBlockSeconds} seconds.`);
-      return;
-    }
-
-    const email = authEmail.trim().toLowerCase();
-    const displayName = authDisplayName.trim();
-    const validationError = validateCredentials(email, authPassword, authMode === "register" ? displayName : undefined);
-    if (validationError) {
-      setAuthError(validationError);
-      return;
-    }
-
-    const rateLimitError = registerAuthSubmission();
-    if (rateLimitError) {
-      setAuthError(rateLimitError);
-      return;
-    }
-
-    setIsAuthenticating(true);
-    setAuthError("");
-
-    try {
-      const result =
-        authMode === "login"
-              email,
-              password: authPassword,
-              options: { data: { display_name: displayName } },
-            });
-
-      if (result.error) {
-        if (shouldCountAuthFailure(result.error, authMode)) registerAuthFailure();
-        setAuthError(getAuthErrorMessage(result.error, authMode));
-        return;
-      }
-
-      setAuthFailures(0);
-      setAuthLockedUntil(null);
-      setAuthPassword("");
-      setIsAuthModalOpen(false);
-
-      if (authMode === "register" && !result.data.session) {
-        setAuthError("Check your email to confirm your account before signing in.");
-        setAuthMode("login");
-        setIsAuthModalOpen(true);
-      }
-    } catch {
-    } finally {
-      setIsAuthenticating(false);
-    }
-  }
-
-  function registerAuthSubmission() {
-    const cutoff = Date.now() - authRateLimitWindowMs;
-    authSubmissionTimes.current = authSubmissionTimes.current.filter((time) => time > cutoff);
-    if (authSubmissionTimes.current.length >= maxAuthSubmissions) {
-      setAuthRateLimitedUntil(Date.now() + authRateLimitWindowMs);
-      return "Too many login attempts. Try again in 60 seconds.";
-    }
-    authSubmissionTimes.current.push(Date.now());
-    return "";
-  }
-
-  function registerAuthFailure() {
-    const nextFailures = authFailures + 1;
-    setAuthFailures(nextFailures);
-    if (nextFailures >= maxAuthAttempts) {
-      setAuthLockedUntil(Date.now() + authLockoutMs);
-      setAuthFailures(0);
-    }
-  }
 
   function toggleAlias(name: string) {
     setSelfAliases((current) => {
@@ -222,8 +82,7 @@ export default function App() {
     setImportStatus("");
   }
 
-    clearImportedChats();
-  }
+
 
   if (isMobile) {
     return <DesktopOnly />;
@@ -238,16 +97,9 @@ export default function App() {
           <p className="lede">Upload WhatsApp export ZIPs. Stats are calculated in this browser for {windowLabel}.</p>
         </div>
 
-        <AccountProfile
-          compact
-          className="auth-status"
-          user={authUser}
-          isAuthReady={isAuthReady}
-          onSignOut={signOut}
-          onLogin={() => setIsAuthModalOpen(true)}
-        />
 
-        <button className="file-drop" disabled={!authUser || isImporting} onClick={openFilePicker}>
+
+        <button className="file-drop" disabled={isImporting} onClick={openFilePicker}>
           <span className="file-icon">+</span>
           <strong>{isImporting ? "Importing locally..." : "Choose WhatsApp ZIP exports"}</strong>
           <small>Multiple files allowed. Nothing is uploaded or saved.</small>
@@ -289,7 +141,7 @@ export default function App() {
         <div className="story-header">
           <p className="eyebrow">Rolling 365 days</p>
           <h2>{stats.messages ? "Your Whatsapp Wrapped" : "Import chats to start"}</h2>
-          <p>{stats.messages ? `${stats.messages.toLocaleString()} messages across ${stats.chats.toLocaleString()} exports.` : "The dashboard unlocks after your first successful import."}</p>
+          <p>{stats.messages ? `${stats.messages.toLocaleString()} messages across ${stats.chats.toLocaleString()} exports.` : "The dashboard fills after your first successful import."}</p>
         </div>
 
         <div className="hero-metrics">
@@ -360,79 +212,8 @@ export default function App() {
         </section>
       </aside>
 
-      {isAuthModalOpen && (
-        <AuthModal
-          authMode={authMode}
-          blockSeconds={authBlockSeconds}
-          displayName={authDisplayName}
-          email={authEmail}
-          error={authError}
-          isAuthenticating={isAuthenticating}
-          isBlocked={isAuthBlocked}
-          password={authPassword}
-          setAuthMode={setAuthMode}
-          setDisplayName={setAuthDisplayName}
-          setEmail={setAuthEmail}
-          setPassword={setAuthPassword}
-          onClose={() => authUser && setIsAuthModalOpen(false)}
-          onSubmit={handleAuthSubmit}
-        />
-      )}
-    </main>
-  );
-}
 
-function AuthModal(props: {
-  authMode: AuthMode;
-  blockSeconds: number;
-  displayName: string;
-  email: string;
-  error: string;
-  isAuthenticating: boolean;
-  isBlocked: boolean;
-  password: string;
-  setAuthMode: (mode: AuthMode) => void;
-  setDisplayName: (value: string) => void;
-  setEmail: (value: string) => void;
-  setPassword: (value: string) => void;
-  onClose: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <form className="auth-modal" onSubmit={props.onSubmit}>
-        <div className="modal-header">
-          <div>
-            <p className="eyebrow">Private access</p>
-            <h2>{props.authMode === "login" ? "Login required" : "Create account"}</h2>
-          </div>
-          <button type="button" onClick={props.onClose} aria-label="Close login">
-            ×
-          </button>
-        </div>
-        {props.authMode === "register" && (
-          <label className="field">
-            Display name
-            <input value={props.displayName} autoComplete="name" onChange={(event) => props.setDisplayName(event.target.value)} />
-          </label>
-        )}
-        <label className="field">
-          Email
-          <input value={props.email} autoComplete="email" inputMode="email" onChange={(event) => props.setEmail(event.target.value)} />
-        </label>
-        <label className="field">
-          Password
-          <input value={props.password} autoComplete={props.authMode === "login" ? "current-password" : "new-password"} type="password" onChange={(event) => props.setPassword(event.target.value)} />
-        </label>
-        {props.error && <div className="error-message">{props.error}</div>}
-        <button className="primary-button" disabled={props.isAuthenticating || props.isBlocked} type="submit">
-          {props.isBlocked ? `Try again in ${props.blockSeconds}s` : props.isAuthenticating ? "Working..." : props.authMode === "login" ? "Login" : "Register"}
-        </button>
-        <button className="text-button" type="button" onClick={() => props.setAuthMode(props.authMode === "login" ? "register" : "login")}>
-          {props.authMode === "login" ? "Need an account?" : "Already have an account?"}
-        </button>
-      </form>
-    </div>
+    </main>
   );
 }
 
@@ -573,24 +354,11 @@ function DesktopOnly() {
   );
 }
 
-function validateCredentials(email: string, password: string, displayName?: string) {
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Enter a valid email address.";
-  if (password.length < 8) return "Password must be at least 8 characters.";
-  if (displayName !== undefined && displayName.length < 2) return "Display name must be at least 2 characters.";
-  return "";
-}
 
-function shouldCountAuthFailure(error: AuthError, mode: AuthMode) {
-  const message = error.message.toLowerCase();
-  return mode === "login" || message.includes("password") || message.includes("credentials");
-}
 
-function getAuthErrorMessage(error: AuthError, mode: AuthMode) {
-  const message = error.message.toLowerCase();
-  if (message.includes("invalid login credentials")) return "Invalid email or password.";
-  if (message.includes("already registered") || message.includes("already exists")) return "An account already exists for this email.";
-  return mode === "login" ? "Login failed. Check your credentials and try again." : "Registration failed. Check your details and try again.";
-}
+
+
+
 
 function formatDate(date: Date) {
   return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
