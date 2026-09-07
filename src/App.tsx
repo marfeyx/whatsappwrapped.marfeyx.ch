@@ -1,7 +1,7 @@
 import { ChangeEvent, DragEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, Chip } from "@heroui/react";
 import { Activity, Archive, ArrowUpRight, BarChart3, CalendarDays, Check, ChevronRight, Clock3, FileArchive, FileText, FolderOpen, Image, Info, LockKeyhole, MessageCircle, MessagesSquare, Mic2, Plus, RefreshCw, ShieldCheck, Sparkles, UploadCloud, Users, Video, X, Zap } from "lucide-react";
-import { calculateWrappedStats, getAllParticipants, getRollingYearWindow, mergeChats } from "./stats";
+import { calculateWrappedStats, getAllParticipants, mergeChats } from "./stats";
 import type { ParsedChat, ParticipantStats, WrappedStats } from "./types";
 
 export default function App() {
@@ -24,13 +24,12 @@ export default function App() {
     const zipFiles = selected.filter((file) => file.name.toLowerCase().endsWith(".zip"));
     const rejected = selected.length - zipFiles.length;
     if (!zipFiles.length) { setErrors(["Choose a WhatsApp chat export in ZIP format."]); return; }
-    const { windowStart, windowEnd } = getRollingYearWindow(new Date());
     setIsImporting(true);
     setStatus(`Reading ${zipFiles.length} private ${zipFiles.length === 1 ? "archive" : "archives"}…`);
     setErrors(rejected ? [`${rejected} non-ZIP ${rejected === 1 ? "file was" : "files were"} skipped.`] : []);
     try {
       const { parseWhatsAppFiles } = await import("./parser");
-      const result = await parseWhatsAppFiles(zipFiles, windowStart, windowEnd);
+      const result = await parseWhatsAppFiles(zipFiles);
       setChats((current) => mergeChats(current, result.chats));
       setErrors((current) => [...current, ...result.errors]);
       setStatus(result.chats.length ? `${result.chats.length} ${result.chats.length === 1 ? "conversation" : "conversations"} added to your Wrapped.` : "No conversations were found.");
@@ -38,7 +37,7 @@ export default function App() {
     finally { setIsImporting(false); }
   }
 
-  function handleInput(event: ChangeEvent<HTMLInputElement>) { const selected = Array.from(event.target.files ?? []); event.target.value = ""; void importFiles(selected); }
+  async function handleInput(event: ChangeEvent<HTMLInputElement>) { const input = event.currentTarget; const selected = Array.from(input.files ?? []); await importFiles(selected); input.value = ""; }
   function handleDrop(event: DragEvent<HTMLElement>) { event.preventDefault(); setIsDragging(false); void importFiles(Array.from(event.dataTransfer.files)); }
   function toggleAlias(name: string) { setSelfAliases((current) => { const next = new Set(current); next.has(name) ? next.delete(name) : next.add(name); return next; }); }
   function clearSession() { setChats([]); setSelfAliases(new Set()); setErrors([]); setStatus(""); }

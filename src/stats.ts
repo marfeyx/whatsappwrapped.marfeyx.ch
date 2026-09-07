@@ -21,21 +21,33 @@ export function getAllParticipants(chats: ParsedChat[]) {
 }
 
 export function calculateWrappedStats(chats: ParsedChat[], selfAliases: Set<string>, now = new Date()): WrappedStats {
-  const { windowStart, windowEnd } = getRollingYearWindow(now);
-  const rawMessages = chats.flatMap((chat) => chat.messages);
-  const messages = dedupeMessages(rawMessages).sort((a, b) => (a.timestamp?.getTime() ?? 0) - (b.timestamp?.getTime() ?? 0));
+  const allMessages = dedupeMessages(chats.flatMap((chat) => chat.messages));
+  const currentWindow = getRollingYearWindow(now);
+  const hasCurrentMessages = allMessages.some((message) => isInsideWindow(message, currentWindow.windowStart, currentWindow.windowEnd));
+  const latestMessage = allMessages.reduce<Date | null>((latest, message) => {
+    if (!message.timestamp || message.timestamp.getTime() > now.getTime()) return latest;
+    return !latest || message.timestamp > latest ? message.timestamp : latest;
+  }, null);
+  const windowEnd = hasCurrentMessages || !latestMessage ? now : new Date(latestMessage);
+  const { windowStart } = getRollingYearWindow(windowEnd);
+  const scopedChats = chats.map((chat) => {
+    const messages = chat.messages.filter((message) => isInsideWindow(message, windowStart, windowEnd));
+    const attachmentPaths = new Set(messages.flatMap((message) => message.attachments.map((attachment) => attachment.path)));
+    return { ...chat, messages, includedMessages: messages.length, attachments: chat.attachments.filter((attachment) => attachmentPaths.has(attachment.path)) };
+  }).filter((chat) => chat.messages.length > 0);
+  const messages = dedupeMessages(scopedChats.flatMap((chat) => chat.messages)).sort((a, b) => (a.timestamp?.getTime() ?? 0) - (b.timestamp?.getTime() ?? 0));
   const participantStats = new Map<string, ParticipantStats>();
   const daily = new Map<string, number>();
   const hourly = new Map<number, number>();
-  const chatSummaries = chats.map(getChatSummary).sort((a, b) => b.messages - a.messages);
+  const chatSummaries = scopedChats.map(getChatSummary).sort((a, b) => b.messages - a.messages);
   let longestMessage: ChatMessage | null = null;
 
   const stats: WrappedStats = {
     generatedAt: now,
     windowStart,
     windowEnd,
-    chats: chats.length,
-    skippedMessages: chats.reduce((total, chat) => total + Math.max(0, chat.totalMessages - chat.includedMessages), 0),
+    chats: scopedChats.length,
+    skippedMessages: chats.reduce((total, chat) => total + chat.totalMessages, 0) - scopedChats.reduce((total, chat) => total + chat.includedMessages, 0),
     messages: messages.length,
     yourMessages: 0,
     partnerMessages: 0,
@@ -121,6 +133,11 @@ export function calculateWrappedStats(chats: ParsedChat[], selfAliases: Set<stri
   stats.hourlyActivity = hourlyActivity;
 
   return stats;
+}
+
+function isInsideWindow(message: ChatMessage, start: Date, end: Date) {
+  const time = message.timestamp?.getTime();
+  return typeof time === "number" && time >= start.getTime() && time <= end.getTime();
 }
 
 function addResponseTimes(messages: ChatMessage[], byParticipant: Map<string, ParticipantStats>) {

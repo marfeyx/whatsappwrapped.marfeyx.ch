@@ -17,13 +17,13 @@ const systemPatterns = [
   /^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4}),\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?\s-\s([\s\S]*)$/i,
 ];
 
-export async function parseWhatsAppFiles(files: File[], windowStart: Date, windowEnd: Date): Promise<ImportResult> {
+export async function parseWhatsAppFiles(files: File[]): Promise<ImportResult> {
   const chats: ParsedChat[] = [];
   const errors: string[] = [];
 
   for (const file of files) {
     try {
-      chats.push(await parseWhatsAppZip(file, windowStart, windowEnd));
+      chats.push(await parseWhatsAppZip(file));
     } catch (error) {
       errors.push(`${file.name}: ${error instanceof Error ? error.message : "Could not parse this file."}`);
     }
@@ -32,8 +32,15 @@ export async function parseWhatsAppFiles(files: File[], windowStart: Date, windo
   return { chats, errors };
 }
 
-async function parseWhatsAppZip(file: File, windowStart: Date, windowEnd: Date): Promise<ParsedChat> {
-  const zip = await JSZip.loadAsync(file);
+async function parseWhatsAppZip(file: File): Promise<ParsedChat> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.byteLength < 4) throw new Error("This ZIP is empty. Download it fully or export the chat again before importing.");
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(bytes);
+  } catch {
+    throw new Error("This file is not a readable ZIP. Download it fully or create a new WhatsApp chat export.");
+  }
   const entries = Object.values(zip.files).filter((entry) => !entry.dir);
   const textFile = pickChatTextFile(entries.map((entry) => entry.name));
 
@@ -48,14 +55,13 @@ async function parseWhatsAppZip(file: File, windowStart: Date, windowEnd: Date):
       return buildAttachment(entry.name, size);
     });
 
-  const text = await zip.file(textFile)!.async("string");
+  const textBytes = await zip.file(textFile)!.async("uint8array");
+  const text = decodeChatText(textBytes);
   const chatId = `${file.name}-${file.size}-${file.lastModified}`;
   const title = inferChatTitle(textFile, file.name);
   const allMessages = parseChatText(text, attachments, chatId, title, file.name);
-  const messages = allMessages.filter((message) => {
-    const time = message.timestamp?.getTime();
-    return typeof time === "number" && time >= windowStart.getTime() && time <= windowEnd.getTime();
-  });
+  if (!allMessages.length) throw new Error("A chat text file was found, but its message format was not recognized.");
+  const messages = allMessages;
   const participants = Array.from(
     new Set(messages.map((message) => message.sender).filter((sender): sender is string => Boolean(sender))),
   ).sort((a, b) => a.localeCompare(b));
@@ -262,5 +268,17 @@ function getBaseName(path: string) {
 }
 
 function cleanInvisible(value: string) {
-  return value.replace(/[\u200e\u200f\u202a-\u202e]/g, "");
+  return value.replace(/[\u200e\u200f\u202a-\u202e]/g, "").replace(/[\u00a0\u202f]/g, " ");
+}
+
+function decodeChatText(bytes: Uint8Array) {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    const swapped = new Uint8Array(bytes.length - 2);
+    for (let index = 2; index + 1 < bytes.length; index += 2) { swapped[index - 2] = bytes[index + 1]; swapped[index - 1] = bytes[index]; }
+    return new TextDecoder("utf-16le").decode(swapped);
+  }
+  const sample = bytes.subarray(0, Math.min(bytes.length, 256));
+  const nulls = sample.reduce((count, value) => count + (value === 0 ? 1 : 0), 0);
+  return new TextDecoder(nulls > sample.length / 5 ? "utf-16le" : "utf-8").decode(bytes);
 }
