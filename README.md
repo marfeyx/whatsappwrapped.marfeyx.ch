@@ -1,4 +1,4 @@
-# Whatsapp Wrapped
+# WhatsApp Wrapped
 
 A local-processing web app that computes a private annual wrap-up from WhatsApp chat export ZIPs.
 
@@ -9,7 +9,8 @@ A local-processing web app that computes a private annual wrap-up from WhatsApp 
 - Only include the rolling 365 days before the page is opened.
 - Mark one or more detected sender names as yourself.
 - Show totals, media counts, voice memo counts, participant rankings, activity by hour, per-chat summaries, and average response times.
-- Disable usage on mobile-sized screens.
+- Fully responsive landing page and results dashboard.
+- Premium dark interface built with HeroUI v3 components and Tailwind CSS v4.
 - Import without login.
 
 ## Privacy
@@ -26,7 +27,7 @@ No external auth configuration is required.
 
 ## Development
 
-Install Node.js 20 or newer, then run:
+Install Node.js 24, then run:
 
 ```powershell
 npm install
@@ -47,7 +48,7 @@ npm run preview
 
 ## GitHub Pages
 
-The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml` and a `CNAME` file for:
+The repository includes a GitHub Pages workflow at `.github/workflows/deploy-pages.yml`. Vite uses relative asset paths, and `public/CNAME` preserves the custom domain in the deployment artifact:
 
 ```text
 whatsappwrapped.marfeyx.ch
